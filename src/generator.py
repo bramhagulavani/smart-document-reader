@@ -11,7 +11,16 @@ def clean_text(text):
     Cleans raw OCR text — removes noise, fixes spacing.
     """
     # Remove non-printable characters
+    # Remove non-printable and special unicode characters
     text = re.sub(r'[^\x20-\x7E\n]', ' ', text)
+    # Replace common special characters with ASCII equivalents
+    text = text.replace('\u2014', '-')   # em dash
+    text = text.replace('\u2013', '-')   # en dash
+    text = text.replace('\u2018', "'")   # left single quote
+    text = text.replace('\u2019', "'")   # right single quote
+    text = text.replace('\u201c', '"')   # left double quote
+    text = text.replace('\u201d', '"')   # right double quote
+    text = text.replace('\u2022', '-')   # bullet point
 
     # Fix multiple spaces
     text = re.sub(r' +', ' ', text)
@@ -38,7 +47,7 @@ class CleanPDF(FPDF):
     def header(self):
         self.set_font('Helvetica', 'B', 10)
         self.set_text_color(100, 100, 100)
-        self.cell(0, 8, 'Smart Document Reader — Extracted Text',
+        self.cell(0, 8, 'Smart Document Reader - Extracted Text',
                   align='C', new_x='LMARGIN', new_y='NEXT')
         self.ln(2)
 
@@ -65,17 +74,17 @@ def generate_clean_pdf(extracted_text_path, output_pdf_path):
     print(f"Cleaned text  : {len(cleaned_text)} characters")
 
     # Create PDF
+    # Create PDF
     pdf = CleanPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_margins(20, 20, 20)
+    pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
 
     # Set font
     pdf.set_font('Helvetica', size=11)
     pdf.set_text_color(30, 30, 30)
 
-    # Set margins
-    pdf.set_left_margin(20)
-    pdf.set_right_margin(20)
+    content_width = pdf.w - pdf.l_margin - pdf.r_margin
 
     # Write each line
     lines = cleaned_text.split('\n')
@@ -98,7 +107,7 @@ def generate_clean_pdf(extracted_text_path, output_pdf_path):
                 pdf.set_text_color(30, 30, 30)
 
             # Write the line
-            pdf.multi_cell(0, 7, line)
+            pdf.multi_cell(content_width, 7, line, new_x='LMARGIN', new_y='NEXT')
 
     # Save the PDF
     pdf.output(output_pdf_path)
