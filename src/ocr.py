@@ -17,20 +17,52 @@ print("✅ EasyOCR model loaded!")
 
 def preprocess_image(image_path):
     """
-    Cleans the image before OCR for better accuracy.
+    Advanced preprocessing to remove ruled lines
+    and improve handwriting contrast.
     """
-    img      = cv2.imread(image_path)
-    gray     = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    denoised = cv2.fastNlMeansDenoising(gray, h=10)
+    img  = cv2.imread(image_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # ── Step 1: Remove ruled lines ───────────────────────────
+    # Detect horizontal lines using morphology
+    horizontal_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (40, 1)
+    )
+    detected_lines = cv2.morphologyEx(
+        gray, cv2.MORPH_OPEN,
+        horizontal_kernel, iterations=2
+    )
+    # Remove detected lines from image
+    repair_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (1, 6)
+    )
+    result = 255 - cv2.dilate(
+        255 - gray, repair_kernel, iterations=1
+    )
+    no_lines = cv2.addWeighted(
+        gray, 1, detected_lines, -1, 0
+    )
+
+    # ── Step 2: Increase contrast ────────────────────────────
+    clahe   = cv2.createCLAHE(
+        clipLimit=2.0, tileGridSize=(8, 8)
+    )
+    enhanced = clahe.apply(no_lines)
+
+    # ── Step 3: Denoise ──────────────────────────────────────
+    denoised = cv2.fastNlMeansDenoising(enhanced, h=15)
+
+    # ── Step 4: Threshold — make text crisp black ────────────
     _, thresh = cv2.threshold(
         denoised, 0, 255,
         cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
-    # Save preprocessed image temporarily
+
+    # ── Step 5: Save preprocessed image ─────────────────────
     temp_path = image_path.replace('.png', '_processed.png')
     cv2.imwrite(temp_path, thresh)
-    return temp_path
 
+    return temp_path
 
 def extract_text_from_image(image_path):
     """
@@ -42,7 +74,13 @@ def extract_text_from_image(image_path):
     processed_path = preprocess_image(image_path)
 
     # Run EasyOCR — returns list of [bbox, text, confidence]
-    results = reader.readtext(processed_path)
+    results = reader.readtext(
+    processed_path,
+    paragraph=False,
+    width_ths=0.7,
+    contrast_ths=0.1,
+    text_threshold=0.5
+    )
 
     # Sort results top to bottom by y coordinate
     results = sorted(results, key=lambda x: x[0][0][1])
