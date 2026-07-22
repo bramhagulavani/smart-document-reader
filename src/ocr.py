@@ -1,28 +1,18 @@
 import os
 import json
-import re
-from PIL import Image
+import easyocr
 import cv2
 import numpy as np
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
-import torch
 
 # ── Path Setup ───────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(BASE_DIR, "data", "outputs")
 
-# ── Load TrOCR Model ─────────────────────────────────────────
-print("Loading TrOCR handwriting model...")
-print("(First time only — downloads ~1.5GB, please wait...)")
-
-processor = TrOCRProcessor.from_pretrained(
-    "microsoft/trocr-large-handwritten"
-)
-model = VisionEncoderDecoderModel.from_pretrained(
-    "microsoft/trocr-large-handwritten"
-)
-model.eval()
-print("✅ TrOCR model loaded!")
+# ── Load EasyOCR Model ───────────────────────────────────────
+print("Loading EasyOCR model...")
+print("(First time only — downloads AI model, please wait...)")
+reader = easyocr.Reader(['en'], gpu=False)
+print("✅ EasyOCR model loaded!")
 
 
 def preprocess_image(image_path):
@@ -36,116 +26,48 @@ def preprocess_image(image_path):
         denoised, 0, 255,
         cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
-    return thresh
-
-
-def extract_lines_from_image(image_path):
-    """
-    Splits the page image into individual lines.
-    TrOCR works best on one line at a time.
-    """
-    img         = cv2.imread(image_path)
-    gray        = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, binary   = cv2.threshold(
-        gray, 0, 255,
-        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-    )
-
-    # Find horizontal line regions
-    kernel      = cv2.getStructuringElement(
-        cv2.MORPH_RECT, (40, 1)
-    )
-    dilated     = cv2.dilate(binary, kernel, iterations=2)
-    contours, _ = cv2.findContours(
-        dilated,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
-    )
-
-    # Sort contours top to bottom
-    contours = sorted(
-        contours, key=lambda c: cv2.boundingRect(c)[1]
-    )
-
-    line_images = []
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        # Filter out very small regions (noise)
-        if h > 10 and w > 50:
-            # Add padding around each line
-            pad    = 5
-            y1     = max(0, y - pad)
-            y2     = min(img.shape[0], y + h + pad)
-            x1     = max(0, x - pad)
-            x2     = min(img.shape[1], x + w + pad)
-            line   = img[y1:y2, x1:x2]
-            line_images.append(line)
-
-    return line_images
-
-
-def read_line_with_trocr(line_image):
-    """
-    Uses TrOCR to read text from a single line image.
-    """
-    # Convert BGR to RGB
-    rgb    = cv2.cvtColor(line_image, cv2.COLOR_BGR2RGB)
-    pil_img = Image.fromarray(rgb)
-
-    # Process image for model
-    pixel_values = processor(
-        images=pil_img, return_tensors="pt"
-    ).pixel_values
-
-    # Generate text
-    with torch.no_grad():
-        generated_ids = model.generate(pixel_values)
-
-    # Decode output
-    text = processor.batch_decode(
-        generated_ids, skip_special_tokens=True
-    )[0]
-
-    return text.strip()
+    # Save preprocessed image temporarily
+    temp_path = image_path.replace('.png', '_processed.png')
+    cv2.imwrite(temp_path, thresh)
+    return temp_path
 
 
 def extract_text_from_image(image_path):
     """
-    Full pipeline — splits page into lines,
-    reads each line with TrOCR, joins results.
+    Uses EasyOCR to extract text from a single page image.
     """
     print(f"\nProcessing: {os.path.basename(image_path)}")
 
-    # Extract individual lines from the page
-    line_images = extract_lines_from_image(image_path)
-    print(f"  Lines detected: {len(line_images)}")
+    # Preprocess the image
+    processed_path = preprocess_image(image_path)
 
-    if not line_images:
-        print("  ⚠️ No lines detected — trying full page mode")
-        img     = cv2.imread(image_path)
-        rgb     = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(rgb)
-        pixel_values = processor(
-            images=pil_img, return_tensors="pt"
-        ).pixel_values
-        with torch.no_grad():
-            generated_ids = model.generate(pixel_values)
-        text = processor.batch_decode(
-            generated_ids, skip_special_tokens=True
-        )[0]
-        return text
+    # Run EasyOCR — returns list of [bbox, text, confidence]
+    results = reader.readtext(processed_path)
 
-    # Read each line
-    lines = []
-    for i, line_img in enumerate(line_images):
-        text = read_line_with_trocr(line_img)
-        if text.strip():
+    # Sort results top to bottom by y coordinate
+    results = sorted(results, key=lambda x: x[0][0][1])
+
+    # Extract text lines with confidence
+    lines      = []
+    total_conf = 0
+
+    for (bbox, text, confidence) in results:
+        if confidence > 0.1:  # filter very low confidence
             lines.append(text)
-            print(f"  Line {i+1}: {text}")
+            total_conf += confidence
+            print(f"  [{confidence*100:.0f}%] {text}")
 
+    avg_conf  = (total_conf / len(results)) * 100 if results else 0
     full_text = '\n'.join(lines)
-    print(f"\n  Total lines read : {len(lines)}")
-    print(f"  Total words      : {len(full_text.split())}")
+
+    print(f"\n  Lines detected   : {len(lines)}")
+    print(f"  Words extracted  : {len(full_text.split())}")
+    print(f"  Avg confidence   : {avg_conf:.1f}%")
+
+    # Clean up temp file
+    if os.path.exists(processed_path):
+        os.remove(processed_path)
+
     return full_text
 
 
@@ -201,6 +123,8 @@ def save_extracted_text(all_text, output_folder):
 
 # ── Run it ───────────────────────────────────────────────────
 if __name__ == "__main__":
+    # First convert your handwritten PDF
+    # Make sure convert.py was run first!
     all_text = extract_text_from_all_images(OUTPUT_DIR)
 
     if all_text:
@@ -218,6 +142,7 @@ if __name__ == "__main__":
         print(f"Total characters : {total_chars}")
         print("==================================")
 
-        print("\n=== TEXT PREVIEW ===")
-        first_text = list(all_text.values())[0]
-        print(first_text)
+        print("\n=== EXTRACTED TEXT ===")
+        for page, text in all_text.items():
+            print(f"\n{page.upper()}:")
+            print(text)
