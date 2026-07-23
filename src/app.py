@@ -26,7 +26,7 @@ st.markdown("---")
 
 # ── Info Cards ───────────────────────────────────────────────
 col1, col2, col3 = st.columns(3)
-col1.metric("OCR Engine",   "Tesseract v5.5")
+col1.metric("OCR Engine",   "EasyOCR Deep Learning")
 col2.metric("Supported",    "English PDFs")
 col3.metric("Output",       "Clean PDF")
 
@@ -34,7 +34,7 @@ st.markdown("---")
 
 # ── Upload Section ───────────────────────────────────────────
 st.subheader("📂 Upload your scanned PDF")
-st.caption("Upload any scanned or text PDF — "
+st.caption("Upload any scanned or handwritten PDF — "
            "AI will extract and clean the content")
 
 uploaded_file = st.file_uploader(
@@ -76,7 +76,7 @@ if uploaded_file is not None:
 
             # ── Step 3: OCR extraction ────────────────────
             with st.spinner("🔍 Extracting text using "
-                            "OCR engine..."):
+                            "EasyOCR AI model..."):
                 all_text = extract_text_from_all_images(img_dir)
                 txt_path = save_extracted_text(all_text, temp_dir)
             total_words = sum(
@@ -107,7 +107,7 @@ if uploaded_file is not None:
             # ── Text Preview ──────────────────────────────
             st.markdown("---")
             st.subheader("👀 Extracted Text Preview")
-            first_text = list(all_text.values())[0]
+            first_text = list(all_text.values())[0] if all_text else "No text extracted."
             st.text_area(
                 label       = "Extracted Text",
                 value       = first_text[:1000] + "...",
@@ -132,8 +132,7 @@ if uploaded_file is not None:
 
         except Exception as e:
             st.error(f"❌ Something went wrong: {str(e)}")
-            st.caption("Make sure Tesseract is installed "
-                       "at C:\\Program Files\\Tesseract-OCR\\")
+            st.caption("Ensure virtual environment with PyTorch and EasyOCR is active.")
 
         finally:
             # Clean up temp directory
@@ -143,30 +142,31 @@ if uploaded_file is not None:
 with st.sidebar:
     st.header("ℹ️ About this Project")
     st.markdown("""
-    This app uses **Tesseract OCR** to read text
-    from scanned or damaged PDF documents and
+    This app uses **EasyOCR (Deep Learning)** to read text
+    from scanned or handwritten PDF documents and
     generates a clean, readable PDF output.
 
     **How it works:**
     1. Upload your scanned PDF
     2. Each page converts to image
-    3. OCR engine reads the text
-    4. Text gets cleaned
+    3. EasyOCR model reads the text
+    4. Text gets cleaned & unicode formatted
     5. Clean PDF is generated
     6. Download your clean PDF
 
     **Best results with:**
     - Clear scanned documents
-    - Printed text (not handwritten)
-    - Good lighting / contrast
+    - Plain white paper handwriting
+    - Good lighting / high contrast
     - English language text
     """)
 
     st.markdown("---")
     st.markdown("**Tech Stack**")
-    st.markdown("- Tesseract OCR v5.5")
     st.markdown("- PyMuPDF (fitz)")
     st.markdown("- OpenCV")
+    st.markdown("- EasyOCR")
+    st.markdown("- PyTorch")
     st.markdown("- fpdf2")
     st.markdown("- Streamlit")
 

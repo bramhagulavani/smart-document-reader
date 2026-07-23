@@ -1,6 +1,14 @@
-import fitz  # this is pymupdf
+import fitz  # pymupdf
 import os
+import sys
 from PIL import Image
+
+# Configure standard output to UTF-8 for Windows PowerShell compatibility
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 # ── Path Setup ───────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

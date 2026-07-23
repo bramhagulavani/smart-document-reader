@@ -1,8 +1,16 @@
 import os
+import sys
 import json
 import easyocr
 import cv2
 import numpy as np
+
+# Configure standard output to UTF-8 for Windows PowerShell compatibility
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 # ── Path Setup ───────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -17,48 +25,31 @@ print("✅ EasyOCR model loaded!")
 
 def preprocess_image(image_path):
     """
-    Advanced preprocessing to remove ruled lines
-    and improve handwriting contrast.
+    Advanced preprocessing to boost handwriting contrast
+    and remove paper noise for plain white and ruled paper.
     """
+    # Step 1: Read image and convert to grayscale
     img  = cv2.imread(image_path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # ── Step 1: Remove ruled lines ───────────────────────────
-    # Detect horizontal lines using morphology
-    horizontal_kernel = cv2.getStructuringElement(
-        cv2.MORPH_RECT, (40, 1)
-    )
-    detected_lines = cv2.morphologyEx(
-        gray, cv2.MORPH_OPEN,
-        horizontal_kernel, iterations=2
-    )
-    # Remove detected lines from image
-    repair_kernel = cv2.getStructuringElement(
-        cv2.MORPH_RECT, (1, 6)
-    )
-    result = 255 - cv2.dilate(
-        255 - gray, repair_kernel, iterations=1
-    )
-    no_lines = cv2.addWeighted(
-        gray, 1, detected_lines, -1, 0
+    # Step 2: CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    # Spreads out pixel intensities to make dark pen ink stand out against white paper
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+
+    # Step 3: Bilateral Filter
+    # Smooths out paper texture noise while keeping handwriting edges razor sharp
+    denoised = cv2.bilateralFilter(enhanced, d=9, sigmaColor=75, sigmaSpace=75)
+
+    # Step 4: Adaptive Gaussian Thresholding
+    # Converts image into clean binary (black text on white background) dynamically per region
+    thresh = cv2.adaptiveThreshold(
+        denoised, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 21, 10
     )
 
-    # ── Step 2: Increase contrast ────────────────────────────
-    clahe   = cv2.createCLAHE(
-        clipLimit=2.0, tileGridSize=(8, 8)
-    )
-    enhanced = clahe.apply(no_lines)
-
-    # ── Step 3: Denoise ──────────────────────────────────────
-    denoised = cv2.fastNlMeansDenoising(enhanced, h=15)
-
-    # ── Step 4: Threshold — make text crisp black ────────────
-    _, thresh = cv2.threshold(
-        denoised, 0, 255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
-
-    # ── Step 5: Save preprocessed image ─────────────────────
+    # Step 5: Save preprocessed image for EasyOCR
     temp_path = image_path.replace('.png', '_processed.png')
     cv2.imwrite(temp_path, thresh)
 

@@ -1,6 +1,14 @@
 import os
+import sys
 import re
 from fpdf import FPDF
+
+# Configure standard output to UTF-8 for Windows PowerShell compatibility
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 
 # ── Path Setup ───────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -8,30 +16,32 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "data", "outputs")
 
 def clean_text(text):
     """
-    Cleans raw OCR text — removes noise, fixes spacing.
+    Cleans raw OCR text — removes noise, fixes spacing, and replaces unicode characters.
     """
-    # Remove non-printable characters
-    # Remove non-printable and special unicode characters
-    text = re.sub(r'[^\x20-\x7E\n]', ' ', text)
-    # Replace common special characters with ASCII equivalents
-    text = text.replace('\u2014', '-')   # em dash
-    text = text.replace('\u2013', '-')   # en dash
-    text = text.replace('\u2018', "'")   # left single quote
-    text = text.replace('\u2019', "'")   # right single quote
-    text = text.replace('\u201c', '"')   # left double quote
-    text = text.replace('\u201d', '"')   # right double quote
-    text = text.replace('\u2022', '-')   # bullet point
+    # Step 1: Replace common special unicode characters with standard ASCII equivalents FIRST
+    text = text.replace('\u2014', '-')   # em dash —
+    text = text.replace('\u2013', '-')   # en dash –
+    text = text.replace('\u2018', "'")   # left single quote ‘
+    text = text.replace('\u2019', "'")   # right single quote ’
+    text = text.replace('\u201c', '"')   # left double quote “
+    text = text.replace('\u201d', '"')   # right double quote ”
+    text = text.replace('\u2022', '-')   # bullet point •
+    text = text.replace('\u2026', '...') # ellipsis …
+    text = text.replace('\t', ' ')       # horizontal tab
 
-    # Fix multiple spaces
+    # Step 2: Remove any remaining non-ASCII characters to keep FPDF safe
+    text = re.sub(r'[^\x20-\x7E\n]', '', text)
+
+    # Step 3: Fix multiple consecutive spaces
     text = re.sub(r' +', ' ', text)
 
-    # Fix multiple blank lines
+    # Step 4: Fix multiple blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
 
-    # Strip leading/trailing whitespace per line
+    # Step 5: Strip leading and trailing whitespace per line
     lines = [line.strip() for line in text.split('\n')]
 
-    # Remove completely empty lines at start and end
+    # Step 6: Remove completely empty lines at start and end
     while lines and not lines[0]:
         lines.pop(0)
     while lines and not lines[-1]:
