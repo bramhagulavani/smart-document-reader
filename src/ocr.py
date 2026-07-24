@@ -25,36 +25,58 @@ print("✅ EasyOCR model loaded!")
 
 def preprocess_image(image_path):
     """
-    Advanced preprocessing to boost handwriting contrast
-    and remove paper noise for plain white and ruled paper.
+    Advanced preprocessing specifically for
+    phone-captured handwriting on white paper.
     """
-    # Step 1: Read image and convert to grayscale
-    img  = cv2.imread(image_path)
+    img = cv2.imread(image_path)
+
+    # ── Step 1: Resize for better OCR ────────────────────────
+    # EasyOCR works best on images around 1800-2400px wide
+    h, w  = img.shape[:2]
+    if w > 2400:
+        scale = 2400 / w
+        img   = cv2.resize(
+            img, (2400, int(h * scale)),
+            interpolation=cv2.INTER_AREA
+        )
+
+    # ── Step 2: Convert to grayscale ─────────────────────────
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Step 2: CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    # Spreads out pixel intensities to make dark pen ink stand out against white paper
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
+    # ── Step 3: Fix uneven lighting / shadows ────────────────
+    # This removes the shadow effect from phone camera
+    blur        = cv2.GaussianBlur(gray, (0, 0), 51)
+    shadow_free = cv2.divide(gray, blur, scale=255)
 
-    # Step 3: Bilateral Filter
-    # Smooths out paper texture noise while keeping handwriting edges razor sharp
-    denoised = cv2.bilateralFilter(enhanced, d=9, sigmaColor=75, sigmaSpace=75)
+    # ── Step 4: Boost contrast ────────────────────────────────
+    clahe    = cv2.createCLAHE(
+        clipLimit=3.0, tileGridSize=(8, 8)
+    )
+    enhanced = clahe.apply(shadow_free)
 
-    # Step 4: Adaptive Gaussian Thresholding
-    # Converts image into clean binary (black text on white background) dynamically per region
-    thresh = cv2.adaptiveThreshold(
-        denoised, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 21, 10
+    # ── Step 5: Sharpen the image ────────────────────────────
+    kernel    = np.array([
+        [ 0, -1,  0],
+        [-1,  5, -1],
+        [ 0, -1,  0]
+    ])
+    sharpened = cv2.filter2D(enhanced, -1, kernel)
+
+    # ── Step 6: Denoise ──────────────────────────────────────
+    denoised = cv2.fastNlMeansDenoising(sharpened, h=10)
+
+    # ── Step 7: Final threshold ───────────────────────────────
+    _, thresh = cv2.threshold(
+        denoised, 0, 255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
 
-    # Step 5: Save preprocessed image for EasyOCR
+    # Save preprocessed image
     temp_path = image_path.replace('.png', '_processed.png')
     cv2.imwrite(temp_path, thresh)
 
     return temp_path
-
+    
 def extract_text_from_image(image_path):
     """
     Uses EasyOCR to extract text from a single page image.
@@ -67,10 +89,13 @@ def extract_text_from_image(image_path):
     # Run EasyOCR — returns list of [bbox, text, confidence]
     results = reader.readtext(
     processed_path,
-    paragraph=False,
-    width_ths=0.7,
-    contrast_ths=0.1,
-    text_threshold=0.5
+    paragraph=True,
+    width_ths=0.9,
+    height_ths=0.9,
+    contrast_ths=0.05,
+    text_threshold=0.4,
+    low_text=0.3,
+    link_threshold=0.4
     )
 
     # Sort results top to bottom by y coordinate
