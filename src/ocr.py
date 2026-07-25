@@ -105,11 +105,17 @@ def extract_text_from_image(image_path):
     lines      = []
     total_conf = 0
 
-    for (bbox, text, confidence) in results:
-        if confidence > 0.1:  # filter very low confidence
+    for result in results:
+        if len(result) == 3:
+            bbox, text, confidence = result
+            if confidence > 0.1:
+                lines.append(text)
+                total_conf += confidence
+                print(f"  [{confidence*100:.0f}%] {text}")
+        elif len(result) == 2:
+            bbox, text = result
             lines.append(text)
-            total_conf += confidence
-            print(f"  [{confidence*100:.0f}%] {text}")
+            print(f"  [--] {text}")
 
     avg_conf  = (total_conf / len(results)) * 100 if results else 0
     full_text = '\n'.join(lines)
