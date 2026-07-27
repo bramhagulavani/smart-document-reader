@@ -19,7 +19,7 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "data", "outputs")
 # ── Load EasyOCR Model ───────────────────────────────────────
 print("Loading EasyOCR model...")
 print("(First time only — downloads AI model, please wait...)")
-reader = easyocr.Reader(['en'], gpu=False)
+reader = easyocr.Reader(['en', 'hi'], gpu=False)
 print("✅ EasyOCR model loaded!")
 
 
